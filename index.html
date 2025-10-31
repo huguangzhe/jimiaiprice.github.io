@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>打包售卖定价计算器</title>
+<style>
+  :root{--bg:#0b0e13;--card:#121826;--muted:#8b9bb3;--text:#e6eefc;--accent:#5b8cff;--warn:#f59e0b;--bad:#ef4444;--good:#10b981;--border:#1f2a3b;}
+  *{box-sizing:border-box} html,body{height:100%}
+  body{margin:0;background:linear-gradient(180deg,#0b0e13,#0a0c12 50%,#0c1018);color:var(--text);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;}
+  .wrap{max-width:1200px;margin:40px auto;padding:0 20px}
+  h1{font-weight:700;letter-spacing:.2px;margin:0 0 18px}.sub{color:var(--muted);margin-bottom:24px}
+  .grid{display:grid;grid-template-columns:360px 1fr;gap:20px}
+  @media (max-width:980px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px 18px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  .card h2{font-size:18px;margin:2px 0 12px}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .field{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+  .label{font-size:12px;color:var(--muted)}
+  input[type="number"],select{width:100%;background:#0f1522;border:1px solid var(--border);color:var(--text);padding:12px;border-radius:12px;outline:none;transition:border .15s;cursor:pointer}
+  input[type="number"]:focus,select:focus{border-color:var(--accent)}
+  select{cursor:pointer}
+  .mutetip{font-size:12px;color:var(--muted)}
+  .kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  @media (max-width:680px){.kpis{grid-template-columns:1fr}}
+  .kpi{background:#0d1320;border:1px dashed var(--border);border-radius:12px;padding:12px 14px}
+  .kpi .name{font-size:12px;color:var(--muted)} .kpi .val{font-size:20px;font-weight:700;margin-top:4px}
+  .pill{display:inline-flex;gap:8px;align-items:center;font-size:12px;padding:6px 10px;border-radius:999px;border:1px solid var(--border);background:#0e1422;color:var(--muted)}
+  .pill.good{color:#bff3dd;border-color:#214a3f;background:#0c1a14}
+  .pill.bad{color:#ffd3d3;border-color:#3f2222;background:#1a0c0c}
+  .pill.warn{color:#ffe9c2;border-color:#5a3c12;background:#1d1407}
+  .hr{height:1px;background:var(--border);margin:14px 0}
+  table{width:100%;border-collapse:collapse;border-spacing:0}
+  th,td{padding:10px 8px;border-bottom:1px solid var(--border);text-align:right}
+  th:first-child,td:first-child{text-align:left} th{color:var(--muted);font-weight:600}
+  .flex{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .btn{background:var(--accent);border:none;color:#fff;padding:10px 14px;border-radius:12px;font-weight:700;cursor:pointer;transition:transform .06s ease;box-shadow:0 8px 20px rgba(91,140,255,.25)}
+  .btn:active{transform:translateY(1px)} .btn.ghost{background:#0f1626;border:1px solid var(--border);color:#cfe0ff;box-shadow:none}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .note{font-size:12px;color:var(--muted)} .quote{white-space:pre-wrap;background:#0f1522;border:1px solid var(--border);border-radius:12px;padding:12px}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>打包售卖定价计算器（含官方价与折扣）</h1>
+    <div class="sub">总利润 = <b>总收入（SellRate×USD_used）− 购买成本</b>；号池模式按 RMB_paid/USD_credit 计算成本汇率，渠道进货模式直接使用进货渠道汇率。</div>
+
+    <div class="grid">
+      <!-- 输入 -->
+      <div class="card">
+        <h2>参数输入</h2>
+        <div class="field">
+          <div class="label">计算模式</div>
+          <select id="calcMode">
+            <option value="pool">号池</option>
+            <option value="channel">渠道进货</option>
+          </select>
+        </div>
+        
+        <div id="poolMode">
+          <div class="row">
+            <div class="field">
+              <div class="label">购买人民币金额 (RMB_paid, 元)</div>
+              <input id="RMB_paid" type="number" min="0" step="0.01" value="150">
+            </div>
+            <div class="field">
+              <div class="label">获得美元额度 (USD_credit, $)</div>
+              <input id="USD_credit" type="number" min="0.01" step="0.01" value="300">
+            </div>
+          </div>
+        </div>
+        
+        <div id="channelMode" style="display:none">
+          <div class="field">
+            <div class="label">进货渠道汇率 (元/美元) <span class="mutetip">直接输入成本汇率</span></div>
+            <input id="ChannelRate" type="number" min="0.0001" step="0.0001" value="0.50">
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <div class="label">售卖汇率 (SellRate, 元/美元)</div>
+            <input id="SellRate" type="number" min="0.0001" step="0.01" value="1.00">
+          </div>
+          <div class="field">
+            <div class="label">对比汇率 (元/美元)</div>
+            <input id="CompareRate" type="number" min="0.0001" step="0.01" value="7.20">
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <div class="label">官方输入单价 (USD_in_perM, $/百万)</div>
+            <input id="USD_in_perM" type="number" min="0.0001" step="0.01" value="1.25">
+          </div>
+          <div class="field">
+            <div class="label">官方输出单价 (USD_out_perM, $/百万)</div>
+            <input id="USD_out_perM" type="number" min="0.0001" step="0.01" value="10.00">
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="label">实际刷额度 (USD_used, $) <span class="mutetip">可小于或大于额度（超刷）</span></div>
+          <input id="USD_used" type="number" min="0" step="0.01" value="300">
+        </div>
+
+        <div class="flex">
+          <button class="btn" id="resetDefaults">恢复默认</button>
+          <span class="pill">提示：回本再刷=$缺口/售卖汇率（已用容差处理边界）</span>
+        </div>
+      </div>
+
+      <!-- 结果：总览 -->
+      <div class="card">
+        <h2>总览</h2>
+
+        <div class="kpis">
+          <div class="kpi">
+            <div class="name">成本汇率 (CostRate, 元/$)</div>
+            <div class="val mono" id="CostRate">—</div>
+          </div>
+          <div class="kpi">
+            <div class="name">售卖汇率 (SellRate, 元/$)</div>
+            <div class="val mono" id="SellRateEcho">—</div>
+          </div>
+          <div class="kpi">
+            <div class="name">实际刷额度 (USD_used, $)</div>
+            <div class="val mono" id="USD_used_echo">—</div>
+            <div class="mutetip" id="usedPct">—</div>
+          </div>
+          <div class="kpi">
+            <div class="name">总收入 (元)</div>
+            <div class="val mono" id="Revenue">—</div>
+          </div>
+          <div class="kpi">
+            <div class="name">购买成本 (元)</div>
+            <div class="val mono" id="CostPaid">—</div>
+          </div>
+          <div class="kpi">
+            <div class="name">本次总利润 = 收入 − 成本 (元)</div>
+            <div class="val mono" id="TotalProfit">—</div>
+          </div>
+        </div>
+
+        <div class="hr"></div>
+        <div class="flex" id="statusLine"><span class="pill">状态：—</span></div>
+        <div class="hr"></div>
+
+        <div class="row">
+          <div class="kpi">
+            <div class="name">最低回本售卖汇率 (元/$)</div>
+            <div class="val mono" id="BreakEvenRate">—</div>
+            <div class="note">SellRate ≥ CostRate 时，单位不亏；是否整体回本取决于是否赚回 RMB_paid。</div>
+          </div>
+          <div class="kpi">
+            <div class="name">在当前汇率下，回本所需再刷 ($)</div>
+            <div class="val mono" id="USD_used_to_break">—</div>
+            <div class="note" id="breakHint">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 单位价格 & 报价 -->
+    <div class="grid" style="margin-top:20px">
+      <div class="card">
+        <h2>单位价格 & 毛利（每百万 tokens）</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>项目</th>
+              <th>我们售价 (元)</th>
+              <th>我们成本 (元)</th>
+              <th>单位毛利 (元)</th>
+              <th>官方价格 (元)</th>
+              <th>折扣</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>输入</td>
+              <td class="mono" id="RMB_in_sell">—</td>
+              <td class="mono" id="RMB_in_cost">—</td>
+              <td class="mono" id="RMB_in_profit">—</td>
+              <td class="mono" id="RMB_in_official_cell">—</td>
+              <td class="mono" id="RMB_in_discount_cell">—</td>
+            </tr>
+            <tr>
+              <td>输出</td>
+              <td class="mono" id="RMB_out_sell">—</td>
+              <td class="mono" id="RMB_out_cost">—</td>
+              <td class="mono" id="RMB_out_profit">—</td>
+              <td class="mono" id="RMB_out_official_cell">—</td>
+              <td class="mono" id="RMB_out_discount_cell">—</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="note" style="margin-top:8px">
+          单位毛利用 <span class="mono">CostRate = RMB_paid / USD_credit</span> 计算；官方人民币价按 <span class="mono">CompareRate</span> 换算；折扣=售价/官方价（如 0.8→8折）。
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>销售报价（对客可见）</h2>
+        <div class="row">
+          <div class="kpi">
+            <div class="name">输入（每百万）</div>
+            <div class="val mono" id="quote_in">—</div>
+            <div class="note" id="quote_in_note">—</div>
+          </div>
+          <div class="kpi">
+            <div class="name">输出（每百万）</div>
+            <div class="val mono" id="quote_out">—</div>
+            <div class="note" id="quote_out_note">—</div>
+          </div>
+        </div>
+        <div class="hr"></div>
+        <div class="flex">
+          <button class="btn" id="copyQuote">复制客户报价</button>
+          <button class="btn ghost" id="copySummary">复制经营摘要</button>
+          <span class="mutetip">复制内容不包含内部成本细节</span>
+        </div>
+        <div class="hr"></div>
+        <div class="quote mono" id="quotePreview">—</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+
+  // ===== 统一容差：与金额两位小数匹配，避免 -0 与边界误判 =====
+  const EPS = 1e-3;
+  const pow10 = d => Math.pow(10, d);
+  const nearZero = x => Math.abs(x) <= EPS;
+  const adj = x => (nearZero(x) ? 0 : x);
+
+  function round(x, d=2){
+    if (!isFinite(x)) return NaN;
+    const k = pow10(d);
+    const y = Math.round((x + Math.sign(x)*Number.EPSILON) * k) / k;
+    return adj(y);
+  }
+  function fmt(n, d=2){
+    if (!isFinite(n)) return '—';
+    const y = round(n, d);
+    const z = Object.is(y, -0) ? 0 : y;
+    return z.toFixed(d).replace(/\.?0+$/,'');
+  }
+  function pct(x, d=1){
+    if (!isFinite(x)) return '—';
+    const y = round(x*100, d);
+    const z = Object.is(y, -0) ? 0 : y;
+    return z.toFixed(d).replace(/\.?0+$/,'') + '%';
+  }
+  function toDiscount(sell, official, d=1){
+    if (!isFinite(sell) || !isFinite(official) || official === 0) return '—';
+    const zhe = round((sell/official)*10, d); // 乘以10→折
+    return `${fmt(zhe, d)} 折`;
+  }
+  function num(id){
+    const v = parseFloat($(id).value);
+    return isFinite(v) ? v : NaN;
+  }
+
+  const ids = ['RMB_paid','USD_credit','SellRate','CompareRate','USD_in_perM','USD_out_perM','USD_used','ChannelRate'];
+  ids.forEach(k => $(k).addEventListener('input', recalc));
+  
+  // 模式切换
+  $('calcMode').addEventListener('change', function(){
+    const mode = this.value;
+    if (mode === 'pool'){
+      $('poolMode').style.display = 'block';
+      $('channelMode').style.display = 'none';
+    } else {
+      $('poolMode').style.display = 'none';
+      $('channelMode').style.display = 'block';
+    }
+    recalc();
+  });
+
+  $('resetDefaults').addEventListener('click', ()=>{
+    $('calcMode').value = 'pool';
+    $('poolMode').style.display = 'block';
+    $('channelMode').style.display = 'none';
+    $('RMB_paid').value = 150;
+    $('USD_credit').value = 300;
+    $('ChannelRate').value = 0.50;
+    $('SellRate').value = 1.00;
+    $('CompareRate').value = 7.20;
+    $('USD_in_perM').value = 1.25;
+    $('USD_out_perM').value = 10.00;
+    $('USD_used').value = 300;
+    recalc();
+  });
+
+  $('copyQuote').addEventListener('click', ()=>{
+    navigator.clipboard.writeText($('quotePreview').innerText.trim()).then(()=>toast('已复制客户报价'));
+  });
+  $('copySummary').addEventListener('click', ()=>{
+    navigator.clipboard.writeText(buildSummaryText()).then(()=>toast('已复制经营摘要'));
+  });
+
+  function toast(msg){
+    const el = document.createElement('div');
+    el.textContent = msg;
+    el.style.cssText = `position:fixed;left:50%;top:24px;transform:translateX(-50%);background:#0f1626;color:#cfe0ff;border:1px solid #1f2a3b;padding:10px 14px;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:9999;font-weight:600`;
+    document.body.appendChild(el); setTimeout(()=>el.remove(),1300);
+  }
+
+  function recalc(){
+    const calcMode = $('calcMode').value;
+    const SellRate = num('SellRate');
+    const CompareRate = num('CompareRate');
+    const USD_in_perM = num('USD_in_perM');
+    const USD_out_perM = num('USD_out_perM');
+    const USD_used = num('USD_used');
+
+    let CostRate, RMB_paid, USD_credit;
+    
+    if (calcMode === 'pool'){
+      // 号池模式：从 RMB_paid 和 USD_credit 计算 CostRate
+      RMB_paid = num('RMB_paid');
+      USD_credit = num('USD_credit');
+      
+      if (!(RMB_paid>0 && USD_credit>0 && SellRate>0 && CompareRate>0 && USD_in_perM>0 && USD_out_perM>0 && USD_used>=0)){
+        markOverviewInvalid(); return;
+      }
+      
+      CostRate = RMB_paid / USD_credit;
+    } else {
+      // 渠道进货模式：直接使用进货渠道汇率作为 CostRate
+      CostRate = num('ChannelRate');
+      
+      if (!(CostRate>0 && SellRate>0 && CompareRate>0 && USD_in_perM>0 && USD_out_perM>0 && USD_used>=0)){
+        markOverviewInvalid(); return;
+      }
+      
+      // 在渠道模式下，实际成本是 CostRate * USD_used
+      RMB_paid = adj(CostRate * USD_used);
+      USD_credit = USD_used; // 在渠道模式下，额度等于已使用量
+    }
+
+    // 成本与收入
+    const Revenue = adj(SellRate * USD_used);
+    const TotalProfit = adj(Revenue - RMB_paid);
+
+    // 单位价（元/百万）
+    const RMB_in_cost  = USD_in_perM  * CostRate;
+    const RMB_out_cost = USD_out_perM * CostRate;
+    const RMB_in_sell  = USD_in_perM  * SellRate;
+    const RMB_out_sell = USD_out_perM * SellRate;
+
+    // 官方人民币价（客户视角）
+    const RMB_in_official  = USD_in_perM  * CompareRate;
+    const RMB_out_official = USD_out_perM * CompareRate;
+
+    // 折扣文本
+    const in_discount_text  = toDiscount(RMB_in_sell,  RMB_in_official, 1);
+    const out_discount_text = toDiscount(RMB_out_sell, RMB_out_official, 1);
+
+    // 总览显示
+    $('CostRate').textContent = fmt(CostRate, 4);
+    $('SellRateEcho').textContent = fmt(SellRate, 4);
+    $('USD_used_echo').textContent = fmt(USD_used, 2);
+    if (calcMode === 'pool'){
+      $('usedPct').textContent = `占额度 ${pct(USD_used / USD_credit, 1)}`;
+    } else {
+      $('usedPct').textContent = `渠道进货模式（按实际用量计算成本）`;
+    }
+    $('Revenue').textContent = fmt(Revenue, 2);
+    $('CostPaid').textContent = fmt(RMB_paid, 2);
+    const tp = $('TotalProfit');
+    tp.textContent = fmt(TotalProfit, 2);
+    tp.style.color = TotalProfit >= 0 ? 'var(--good)' : 'var(--bad)';
+
+    $('BreakEvenRate').textContent = fmt(CostRate, 4);
+
+    // 回本所需再刷：以覆盖购买成本为口径
+    const lackRMB = adj(RMB_paid - Revenue);
+    if (lackRMB <= 0){
+      $('USD_used_to_break').textContent = '0';
+      $('breakHint').textContent = lackRMB === 0 ? '已回本（持平）' : '已回本（已超过购买成本）';
+      $('breakHint').style.color = 'var(--good)';
+    } else {
+      const xNeeded = adj(lackRMB / SellRate);
+      $('USD_used_to_break').textContent = fmt(xNeeded, 2);
+      const totalUsedAfter = adj(USD_used + xNeeded);
+      $('breakHint').textContent = `预计总刷至 ${fmt(totalUsedAfter,2)} $ 可回本（其中新增 ${fmt(xNeeded,2)} $）`;
+      $('breakHint').style.color = 'var(--warn)';
+    }
+
+    // 状态条
+    const status = $('statusLine'); status.innerHTML = '';
+    const pill = document.createElement('span');
+    if (TotalProfit > 0){
+      pill.className = 'pill good';
+      pill.textContent = `状态：已回本（盈余 ${fmt(TotalProfit,2)} 元）`;
+    } else if (TotalProfit < 0){
+      pill.className = 'pill bad';
+      pill.textContent = `状态：未回本（还差 ${fmt(-TotalProfit,2)} 元）`;
+    } else {
+      pill.className = 'pill good';
+      pill.textContent = `状态：已回本（持平）`;
+    }
+    status.appendChild(pill);
+
+    // 超刷提示（仅号池模式）
+    if (calcMode === 'pool'){
+      const over = adj(USD_used - USD_credit);
+      if (over > 0){
+        const overPill = document.createElement('span');
+        overPill.className = 'pill warn';
+        overPill.textContent = `提示：已超刷 ${fmt(over,2)} 美元（超刷收入 +${fmt(over * SellRate, 2)} 元）`;
+        status.appendChild(overPill);
+      }
+    }
+    if (SellRate < CostRate){
+      const warn = document.createElement('span');
+      warn.className = 'pill bad';
+      warn.textContent = '警告：售卖汇率低于成本汇率（单位核算口径），注意单价亏损风险';
+      status.appendChild(warn);
+    }
+
+    // 单位价格表（含官方价与折扣）
+    $('RMB_in_sell').textContent   = fmt(RMB_in_sell, 4);
+    $('RMB_out_sell').textContent  = fmt(RMB_out_sell, 4);
+    $('RMB_in_cost').textContent   = fmt(RMB_in_cost, 4);
+    $('RMB_out_cost').textContent  = fmt(RMB_out_cost, 4);
+    $('RMB_in_profit').textContent = fmt(RMB_in_sell - RMB_in_cost, 4);
+    $('RMB_out_profit').textContent= fmt(RMB_out_sell - RMB_out_cost, 4);
+
+    $('RMB_in_official_cell').textContent  = fmt(RMB_in_official, 4);
+    $('RMB_out_official_cell').textContent = fmt(RMB_out_official, 4);
+    $('RMB_in_discount_cell').textContent  = in_discount_text;
+    $('RMB_out_discount_cell').textContent = out_discount_text;
+
+    // 报价卡（对外）：显示官方价与折扣
+    $('quote_in').textContent = `${fmt(RMB_in_sell,4)} 元 / 百万（输入）`;
+    $('quote_out').textContent = `${fmt(RMB_out_sell,4)} 元 / 百万（输出）`;
+    $('quote_in_note').textContent  = `官方价 ${fmt(RMB_in_official,4)} 元 / 百万，约 ${in_discount_text}`;
+    $('quote_out_note').textContent = `官方价 ${fmt(RMB_out_official,4)} 元 / 百万，约 ${out_discount_text}`;
+    $('quotePreview').textContent = buildQuoteText({
+      RMB_in_sell,RMB_out_sell,
+      CompareRate,
+      RMB_in_official,RMB_out_official,
+      in_discount_text,out_discount_text
+    });
+  }
+
+  function markOverviewInvalid(){
+    ['CostRate','SellRateEcho','USD_used_echo','usedPct','Revenue','CostPaid','TotalProfit','BreakEvenRate','USD_used_to_break','breakHint']
+      .forEach(id=>$(id).textContent='—');
+    $('statusLine').innerHTML = '<span class="pill">状态：—</span>';
+    ['RMB_in_sell','RMB_out_sell','RMB_in_cost','RMB_out_cost','RMB_in_profit','RMB_out_profit',
+     'RMB_in_official_cell','RMB_out_official_cell','RMB_in_discount_cell','RMB_out_discount_cell',
+     'quote_in','quote_out','quote_in_note','quote_out_note','quotePreview']
+      .forEach(id=>$(id).textContent='—');
+  }
+
+  // 报价文本：包含官方价与“几折”
+  function buildQuoteText(o){
+    const {
+      RMB_in_sell, RMB_out_sell,
+      CompareRate,
+      RMB_in_official, RMB_out_official,
+      in_discount_text, out_discount_text
+    } = o;
+
+    return [
+      '【客户报价】',
+      `输入：我们的售价 ${fmt(RMB_in_sell,4)} 元 / 百万，官方价 ${fmt(RMB_in_official,4)} 元 / 百万（约 ${in_discount_text}）`,
+      `输出：我们的售价 ${fmt(RMB_out_sell,4)} 元 / 百万，官方价 ${fmt(RMB_out_official,4)} 元 / 百万（约 ${out_discount_text}）`,
+      `* 官方美元价按实时汇率 ${fmt(CompareRate,4)} 元/$ 换算，仅作对比。`
+    ].join('\n');
+  }
+
+  function buildSummaryText(){
+    const calcMode = $('calcMode').value;
+    const SellRate = parseFloat(document.getElementById('SellRate').value);
+    const CompareRate = parseFloat(document.getElementById('CompareRate').value);
+    const USD_in_perM = parseFloat(document.getElementById('USD_in_perM').value);
+    const USD_out_perM = parseFloat(document.getElementById('USD_out_perM').value);
+    const USD_used = parseFloat(document.getElementById('USD_used').value);
+
+    let CostRate, RMB_paid;
+    
+    if (calcMode === 'pool'){
+      RMB_paid = parseFloat(document.getElementById('RMB_paid').value);
+      const USD_credit = parseFloat(document.getElementById('USD_credit').value);
+      CostRate = RMB_paid/USD_credit;
+    } else {
+      CostRate = parseFloat(document.getElementById('ChannelRate').value);
+      RMB_paid = CostRate * USD_used;
+    }
+    
+    const Revenue = SellRate * USD_used;
+    const TotalProfit = Revenue - RMB_paid;
+
+    const RMB_in_sell = USD_in_perM*SellRate, RMB_out_sell = USD_out_perM*SellRate;
+    const RMB_in_cost = USD_in_perM*CostRate, RMB_out_cost = USD_out_perM*CostRate;
+    const RMB_in_official  = USD_in_perM  * CompareRate;
+    const RMB_out_official = USD_out_perM * CompareRate;
+
+    return [
+      '【经营摘要】',
+      `收入：${fmt(Revenue,2)} 元；购买成本：${fmt(RMB_paid,2)} 元；总利润：${fmt(TotalProfit,2)} 元`,
+      `成本汇率：${fmt(CostRate,4)} 元/$；售卖汇率：${fmt(SellRate,4)} 元/$；对比汇率：${fmt(CompareRate,4)} 元/$`,
+      `输入 售 ${fmt(RMB_in_sell,4)} /百，成 ${fmt(RMB_in_cost,4)} /百，官 ${fmt(RMB_in_official,4)} /百（折 ${toDiscount(RMB_in_sell,RMB_in_official,1)}）`,
+      `输出 售 ${fmt(RMB_out_sell,4)} /百，成 ${fmt(RMB_out_cost,4)} /百，官 ${fmt(RMB_out_official,4)} /百（折 ${toDiscount(RMB_out_sell,RMB_out_official,1)}）`,
+    ].join('\n');
+  }
+
+  // init
+  recalc();
+})();
+</script>
+</body>
+</html>
